@@ -1,0 +1,121 @@
+Content-Type: multipart/mixed; boundary="//"
+MIME-Version: 1.0
+
+--//
+Content-Type: text/cloud-config; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="cloud-config.txt"
+
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+
+--//
+Content-Type: text/x-shellscript; charset="us-ascii"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="userdata.txt"
+
+#!/bin/bash
+# NOTE: EC2 User Data is run as root
+# so you should not need sudo here
+echo "-- UPDATING PACKAGES"
+yum update -y
+
+# Stop the apache service
+echo "-- STOP APACHE SERVICE"
+systemctl stop httpd
+
+# Wait for the EBS Data Volume to be available
+max=10
+count=0
+elapsed=0
+until (test -e ${datadevicename})
+do
+  echo "-- WAITING FOR EBS DATA VOLUME...$${elapsed}s"
+
+  if (test $count -ge $max);
+  then
+    echo "-- WAITED TOO LONG...BAILING"
+    break
+  fi
+
+  sleep 10
+  ((count=$count+1))
+  ((elapsed=$count * 10))
+done
+
+if (test $count -lt $max);
+then
+  # Attempt to format drive
+  echo "-- CHECKING EBS FORMATTING"
+  echo "-- EBS DEVICE: ${datadevicename}"
+  echo "-- FORMATTING DRIVE as ${fstype}"
+  mkfs -t ${fstype} ${datadevicename}
+
+  echo "-- CHECKING DATA DIRECTORY MOUNT"
+
+  # Make sure our data directory is mounted
+  if mountpoint -q ${datadir};
+  then
+    echo "-- DATA DIRECTORY ALREADY MOUNTED"
+  else
+    echo "-- MOUNTING DATA DIRECTORY"
+    mkdir ${datadir}
+    mount ${datadevicename} ${datadir}
+  fi
+  
+  WPCONTENT=/var/www/html/wp-content
+  # Symlink the /var/www/html/wp-content
+  mkdir $WPCONTENT
+  ln -s ${datadir} $WPCONTENT
+
+  # Create config file if necessary
+  echo "-- CHECKING FOR WP CONFIG FILE"
+  if (test -f /var/www/html/wp-config.php);
+  then
+    echo "-- FILE ALREADY EXISTS"
+  else
+    echo "-- CREATING CONFIG FILE"
+    cat <<EOF > /var/www/html/wp-config.php
+<?php
+if (strpos($_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false)
+$_SERVER['HTTPS']='on';
+\$table_prefix = '${dbprefix}';
+define('DB_NAME',           '${dbname}');
+define('DB_USER',           '${dbuser}');
+define('DB_PASSWORD',       '${dbpwd}');
+define('DB_HOST',           '${dbhost}');
+define('AUTH_KEY',          'QJF~lQG{GrPJ)+0,uKUeIxK9,+XY33*&8mvgEOTqct9-i;z}-^-u{ky,h<_!BX!E');
+define('SECURE_AUTH_KEY',   'f[.oq%Lw4N.^~!wxQ!GnP8c-:y@43=3+t:lE/-:Q+1|VpHL6=n*&zU=>#RIZMe4|');
+define('LOGGED_IN_KEY',     'y*-L|RLu]&iMuWI2uihTgj>=:^bl:5#ZDo+o;HZSi1wyyT6-=x.hl[b:txd =KNr');
+define('NONCE_KEY',         ',|tW2mq\$HG\$vSv_j,\$9d*hZ[-|VvT\$gnNOc>wi,6hmJ!.M[E5dd<V>#DyP^rJ=<.');
+define('AUTH_SALT',         'O%MF/lKoet#6{9qS_35KMbW,v#fW+LgV-?NmjCKjl2KEhcX}gkZKjx4[m,!Z,9ei');
+define('SECURE_AUTH_SALT',  '[:N)xM@3f2ZE4n/~fX3}Bu>2W@r|k6&1^-oLE|ffjfC]/4T2m-<#KV7c:7wcMd|l');
+define('LOGGED_IN_SALT',    'i~^PqVt:hw(v_vrh;=w#>]SP;5A];uf 6=*PpH#CX_dV2#s8JWy3FELNceueL&f2');
+define('NONCE_SALT',        '#>eD0wD|3!E,oPg\$4;=z(IZhxNC|SjBAYT4ugo/1Xw5H]pbge*L;d[%b@.fz+pl^');
+define('WP_DEBUG',          false);
+if ( ! defined( 'ABSPATH' ) ) {
+define( 'ABSPATH', __DIR__ . '/' );
+}
+require_once ABSPATH . 'wp-settings.php';
+?>
+EOF
+  fi
+
+  # Grant permissions
+  echo "-- GRANTING PERMISSIONS"
+  chown apache -R $WPCONTENT
+  chmod 2775 $WPCONTENT
+  find $WPCONTENT -type d -exec sudo chmod 2775 {} \;
+  find $WPCONTENT -type f -exec sudo chmod 0664 {} \;
+
+  # Enable service
+  echo "-- ENABLE AND START SERVICE"
+  systemctl enable httpd
+  systemctl start httpd
+  systemctl status httpd
+fi
+
+--//--

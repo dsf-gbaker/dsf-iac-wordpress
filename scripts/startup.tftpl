@@ -81,7 +81,7 @@ then
     cat <<EOF > /var/www/html/wp-config.php
 <?php
 if (strpos($_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false)
-$_SERVER['HTTPS']='on';
+\$_SERVER['HTTPS']='on';
 \$table_prefix = '${dbprefix}';
 define('DB_NAME',           '${dbname}');
 define('DB_USER',           '${dbuser}');

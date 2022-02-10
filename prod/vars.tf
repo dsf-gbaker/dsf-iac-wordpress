@@ -13,8 +13,8 @@ variable "tag-environment" {
   type    = string
 }
 
-variable "ami" {
-  default = "ami-00edebb01849a9623" #our wordpress ami
+variable "wordpress-major-v" {
+  default = "5"
   type    = string
 }
 
@@ -29,21 +29,6 @@ variable "hosted-zone-id" {
 
 variable "availability-zone" {
   default = "us-east-1b"
-  type    = string
-}
-
-variable "ebs-data-size" {
-  default = 40
-  type    = number
-}
-
-variable "ebs-data-fstype" {
-  default = "xfs"
-  type    = string
-}
-
-variable "ebs-data-device-name" {
-  default = "/dev/xvdf"
   type    = string
 }
 

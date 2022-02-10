@@ -24,61 +24,17 @@ echo "-- UPDATING PACKAGES"
 yum update -y
 
 # Stop the apache service
-echo "-- STOP APACHE SERVICE"
+echo "-- STOP WEB SERVER"
 systemctl stop httpd
 
-# Wait for the EBS Data Volume to be available
-max=10
-count=0
-elapsed=0
-until (test -e ${datadevicename})
-do
-  echo "-- WAITING FOR EBS DATA VOLUME...$${elapsed}s"
-
-  if (test $count -ge $max);
-  then
-    echo "-- WAITED TOO LONG...BAILING"
-    break
-  fi
-
-  sleep 10
-  ((count=$count+1))
-  ((elapsed=$count * 10))
-done
-
-if (test $count -lt $max);
+# Create config file if necessary
+echo "-- CHECKING FOR WP CONFIG FILE"
+if (test -f /var/www/html/wp-config.php);
 then
-  # Attempt to format drive
-  echo "-- CHECKING EBS FORMATTING"
-  echo "-- EBS DEVICE: ${datadevicename}"
-  echo "-- FORMATTING DRIVE as ${fstype}"
-  mkfs -t ${fstype} ${datadevicename}
-
-  echo "-- CHECKING DATA DIRECTORY MOUNT"
-
-  # Make sure our data directory is mounted
-  if mountpoint -q ${datadir};
-  then
-    echo "-- DATA DIRECTORY ALREADY MOUNTED"
-  else
-    echo "-- MOUNTING DATA DIRECTORY"
-    mkdir ${datadir}
-    mount ${datadevicename} ${datadir}
-  fi
-  
-  WPCONTENT=/var/www/html/wp-content
-  # Symlink the /var/www/html/wp-content
-  mkdir $WPCONTENT
-  ln -s ${datadir} $WPCONTENT
-
-  # Create config file if necessary
-  echo "-- CHECKING FOR WP CONFIG FILE"
-  if (test -f /var/www/html/wp-config.php);
-  then
-    echo "-- FILE ALREADY EXISTS"
-  else
-    echo "-- CREATING CONFIG FILE"
-    cat <<EOF > /var/www/html/wp-config.php
+  echo "-- FILE ALREADY EXISTS"
+else
+  echo "-- CREATING CONFIG FILE"
+  cat <<EOF > /var/www/html/wp-config.php
 <?php
 if (strpos($_SERVER['HTTP_X_FORWARDED_PROTO'], 'https') !== false)
 \$_SERVER['HTTPS']='on';
@@ -103,20 +59,19 @@ define( 'ABSPATH', __DIR__ . '/' );
 require_once ABSPATH . 'wp-settings.php';
 ?>
 EOF
-  fi
-
-  # Grant permissions
-  echo "-- GRANTING PERMISSIONS"
-  chown apache -R $WPCONTENT
-  chmod 2775 $WPCONTENT
-  find $WPCONTENT -type d -exec sudo chmod 2775 {} \;
-  find $WPCONTENT -type f -exec sudo chmod 0664 {} \;
-
-  # Enable service
-  echo "-- ENABLE AND START SERVICE"
-  systemctl enable httpd
-  systemctl start httpd
-  systemctl status httpd
 fi
+
+# Grant permissions
+# echo "-- GRANTING PERMISSIONS"
+# chown apache -R ${wpdir}
+# chmod 2775 ${wpdir}
+# find ${wpdir} -type d -exec sudo chmod 2775 {} \;
+# find ${wpdir} -type f -exec sudo chmod 0664 {} \;
+
+# Enable service
+echo "-- ENABLE AND START WEB SERVER"
+systemctl enable httpd
+systemctl start httpd
+systemctl status httpd
 
 --//--

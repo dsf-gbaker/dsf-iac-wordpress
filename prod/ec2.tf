@@ -9,29 +9,21 @@ resource "aws_key_pair" "wordpress-keypair" {
   public_key  = tls_private_key.key.public_key_openssh
 }
 
-resource "aws_ebs_volume" "wordpress" {
-  availability_zone = var.availability-zone
-  size = var.ebs-data-size
+# find the latest wordpress ami for the desired major v
+data "aws_ami" "wordpress" {
+  owners      = ["self"]
+  most_recent = true
   
-  tags = {
-    Type = "data"
+  filter {
+    name    = "name"
+    values  = [
+      "wordpress-v${var.wordpress-major-v}.*"
+    ]
   }
 }
 
-resource "aws_ebs_snapshot" "wordpress" {
-  volume_id = aws_ebs_volume.wordpress.id
-}
-
-resource "aws_volume_attachment" "wordpress" {
-  device_name = var.ebs-data-device-name
-  volume_id   = aws_ebs_volume.wordpress.id
-  instance_id = aws_instance.wordpress.id
-
-  stop_instance_before_detaching = true
-}
-
 resource "aws_instance" "wordpress" {
-  ami                         = var.ami
+  ami                         = data.aws_ami.wordpress.id
   availability_zone           = var.availability-zone
   instance_type               = "t4g.micro"
   subnet_id                   = data.terraform_remote_state.dsf.outputs.public_subnet_id2
@@ -39,14 +31,12 @@ resource "aws_instance" "wordpress" {
   associate_public_ip_address = true
 
   user_data = templatefile("../scripts/startup.tftpl", {
-    datadir:        "/wordpress/data",
-    datadevicename: var.ebs-data-device-name,
-    fstype:         var.ebs-data-fstype,
+    wpdir:          "/var/www/html"
     dbprefix:       var.wp-prefix,
     dbname:         var.wp-dbname,
     dbuser:         var.wp-dbuser,
     dbpwd:          var.wp-dbpwd,
-    dbhost:          data.terraform_remote_state.dsf.outputs.rds_endpoint
+    dbhost:         data.terraform_remote_state.dsf.outputs.rds_endpoint
   })
 
   vpc_security_group_ids = [
@@ -54,8 +44,8 @@ resource "aws_instance" "wordpress" {
   ]
 
   root_block_device {
-    volume_size           = "8" # GiB
+    volume_size           = "10" # GiB
     volume_type           = "gp2"
-    delete_on_termination = true
+    delete_on_termination = false
   }
 }
